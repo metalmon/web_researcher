@@ -1,0 +1,4 @@
+firecrawl-py
+openai
+tqdm
+colorama
