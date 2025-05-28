@@ -66,6 +66,15 @@ FINAL_SALES_SCHEMA = {
             "type": "object",
             "properties": {
                 "company_profile": {"type": "string", "description": "Краткое описание деятельности компании"},
+                "industry": {
+                    "type": "object",
+                    "properties": {
+                        "primary": {"type": "string", "description": "Основная отрасль компании"},
+                        "secondary": {"type": "array", "items": {"type": "string"}, "description": "Смежные отрасли"},
+                        "trends": {"type": "array", "items": {"type": "string"}, "description": "Ключевые тренды в отрасли"}
+                    },
+                    "required": ["primary"]
+                },
                 "core_values": {"type": "array", "items": {"type": "string"}, "description": "Ключевые ценности компании"},
                 "internal_pains": {"type": "array", "items": {"type": "string"}, "description": "Внутренние боли компании"},
                 "hidden_concerns": {"type": "array", "items": {"type": "string"}, "description": "Скрытые опасения компании"},
@@ -79,7 +88,7 @@ FINAL_SALES_SCHEMA = {
                 "overall_assessment": {"type": "string", "description": "Общий вывод по компании"}
             },
             "required": [
-                "company_profile", "core_values", "internal_pains", "hidden_concerns", "org_culture_traits", "key_success_factor", "key_needs", "what_to_offer", "important_considerations", "sales_recommendations", "mbti_profile", "overall_assessment"
+                "company_profile", "industry", "core_values", "internal_pains", "hidden_concerns", "org_culture_traits", "key_success_factor", "key_needs", "what_to_offer", "important_considerations", "sales_recommendations", "mbti_profile", "overall_assessment"
             ]
         }
     }
@@ -113,6 +122,27 @@ ANALYSIS_PAGE_SELECTION_SCHEMA = {
                 }
             },
             "required": ["urls"]
+        }
+    }
+}
+
+# === Email Generation Schemas ===
+OUTREACH_EMAIL_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "outreach_email_result",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "subject": {"type": "string", "description": "Email subject line"},
+                "greeting": {"type": "string", "description": "Personalized greeting"},
+                "story": {"type": "string", "description": "A personal story or observation that creates connection and shows understanding"},
+                "insight": {"type": "string", "description": "A unique insight about their business or industry that demonstrates expertise"},
+                "proposal": {"type": "string", "description": "A specific, concrete proposal that ties the story and insight together"},
+                "call_to_action": {"type": "string", "description": "Clear next steps with a specific ask"},
+                "signature": {"type": "string", "description": "Professional signature with contact information"}
+            },
+            "required": ["subject", "greeting", "story", "insight", "proposal", "call_to_action", "signature"]
         }
     }
 }
@@ -186,13 +216,23 @@ FINAL_SALES_PROMPT = (
     "Если есть внутренние возражения или опасения — укажи, как их обойти. "
     "В отдельном сообщении тебе будет передан MBTI-профиль ЛПР. Учитывай его при формировании рекомендаций и обязательно выведи его в ответе в соответствующем поле.\n"
     "\n"
+    "Определи отрасль компании:\n"
+    "1. Укажи основную отрасль (primary)\n"
+    "2. Перечисли смежные отрасли (secondary)\n"
+    "3. Опиши ключевые тренды в отрасли (trends)\n"
+    "\n"
     "Пример неправильного ответа: советовать компании купить или внедрить то, что она уже производит/продаёт.\n"
     "Пример правильного ответа: предложить обучение, консалтинг, инструменты для выхода на новые рынки, автоматизацию смежных процессов и т.д., если это не её основной бизнес.\n"
     "\n"
-    "Ответь строго в формате JSON с ключами только на английском языке (company_profile, core_values, internal_pains, hidden_concerns, org_culture_traits, key_success_factor, key_needs, what_to_offer, important_considerations, sales_recommendations, overall_assessment, mbti_profile). Не добавляй других ключей, не меняй имена ключей, не меняй структуру. Все значения (ответы) должны быть на русском языке.\n"
+    "Ответь строго в формате JSON с ключами только на английском языке (company_profile, industry, core_values, internal_pains, hidden_concerns, org_culture_traits, key_success_factor, key_needs, what_to_offer, important_considerations, sales_recommendations, overall_assessment, mbti_profile). Не добавляй других ключей, не меняй имена ключей, не меняй структуру. Все значения (ответы) должны быть на русском языке.\n"
     "Пример ответа:\n"
     "{\n"
     "  \"company_profile\": \"...\",\n"
+    "  \"industry\": {\n"
+    "    \"primary\": \"...\",\n"
+    "    \"secondary\": [\"...\", \"...\"],\n"
+    "    \"trends\": [\"...\", \"...\"]\n"
+    "  },\n"
     "  \"core_values\": [\"...\", \"...\"],\n"
     "  \"internal_pains\": [\"...\", \"...\"],\n"
     "  \"hidden_concerns\": [\"...\", \"...\"],\n"
@@ -226,4 +266,406 @@ ANALYSIS_PAGE_SELECTION_PROMPT = (
     "Максимум {limit} ссылок. Если подходящих страниц меньше — верни только их. Если нет ни одной релевантной — верни пустой список.\n\n"
     "Ответ верни строго в виде JSON-объекта по схеме: urls — массив строк (URL).\n\n"
     "Список ссылок:\n{{links}}"
-) 
+)
+
+# === Email Generation Prompts ===
+OUTREACH_EMAIL_PROMPT = """Сгенерируй короткое, но цепляющее письмо для первого контакта. Письмо должно быть на русском языке.
+
+ВАЖНО: Четко определи роли сторон!
+1. Мы (отправитель) - компания из product_info.description
+2. Получатель - компания из company_analysis
+3. Мы пишем письмо от НАШЕЙ компании к анализируемой компании
+
+Перед генерацией письма проанализируй:
+1. Глубокий анализ получателя:
+   - Какие у них ключевые бизнес-процессы?
+   - Какие ценности и культура?
+   - Какие боли и вызовы?
+   - Какие неочевидные потребности?
+
+2. Творческий поиск связей:
+   - Как наш продукт может нестандартно решить их проблемы?
+   - Какие скрытые выгоды мы можем предложить?
+   - Как мы можем усилить их сильные стороны?
+   - Какие неожиданные применения нашего продукта возможны?
+
+3. Уникальные возможности:
+   - Какие особые преимущества нашего продукта?
+   - Как мы можем создать дополнительную ценность?
+   - Какие нестандартные сценарии использования?
+   - Как мы можем поддержать их уникальность?
+
+Структура письма:
+1. Приветствие
+   - Используй имя ЛПР из company_analysis
+   - НЕ используй имя отправителя в приветствии
+   - Если нет имени получателя, обходись без него
+2. Инсайт о проблеме (1-2 предложения)
+   - Используй конкретное наблюдение о текущей ситуации
+   - Выбери одну из болей из lead_score.explanation
+   - НЕ предлагай решение
+3. Открытый вопрос (1 предложение)
+   - Должен провоцировать мысль
+   - Связан с инсайтом о проблеме
+   - НЕ требует немедленного ответа
+4. Мягкий призыв к действию
+   - Предложи обменяться опытом
+   - Укажи Telegram для ответа (87% ЛПР в РФ предпочитают этот канал)
+   - Без давления
+
+Важные моменты:
+- Клиент - главный герой истории
+- Каждое предложение должно добавлять ценность
+- Используй наблюдаемые факты и метрики
+- Адаптируй тон и глубину под lead_score:
+  * score > 0.8: фокус на быстром старте и измеримых результатах
+  * 0.5 < score < 0.8: фокус на ценности и долгосрочной перспективе
+  * score < 0.5: образовательный подход, более мягкий тон
+
+Используй информацию об отрасли:
+- Упоминай специфичные для отрасли метрики и KPI
+- Используй профессиональную терминологию отрасли
+- Ссылайся на актуальные тренды из industry.trends
+- Учитывай особенности primary и secondary отраслей
+
+Используй recommended_scheme для структуры письма:
+- BAB (Before-After-Bridge): текущая ситуация → желаемый результат → как мы помогаем
+- PAS (Problem-Agitate-Solve): проблема → последствия → решение
+- SPIN (Situation-Problem-Implication-Need): ситуация → проблема → последствия → потребность
+
+Примеры фраз для CTA:
+❌ "Давайте обсудим"
+❌ "Буду рад пообщаться"
+✅ "Ответьте 'Расчет' в @ваш_логин — вышлю анализ к 15:00 завтра"
+✅ "Напишите 'Оптимизация' в @ваш_логин — подготовлю кейс по [конкретная метрика]"
+
+Контекст:
+{context}
+
+Сгенерируй письмо, следуя структуре и рекомендациям выше."""
+
+# === Lead Scoring Schema ===
+LEAD_SCORE_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "lead_score_result",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "score": {
+                    "type": "number",
+                    "description": "Lead relevance score between 0 and 1",
+                    "minimum": 0,
+                    "maximum": 1
+                },
+                "communication_scheme": {
+                    "type": "object",
+                    "properties": {
+                        "scheme": {
+                            "type": "string",
+                            "enum": ["BAB", "PAS", "SPIN"],
+                            "description": "Recommended communication scheme based on psychological profile"
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "Explanation why this scheme is most suitable"
+                        },
+                        "key_focus": {
+                            "type": "string",
+                            "description": "Main focus points for this communication scheme"
+                        }
+                    },
+                    "required": ["scheme", "reason", "key_focus"]
+                },
+                "explanation": {
+                    "type": "object",
+                    "properties": {
+                        "company_fit": {
+                            "type": "object",
+                            "properties": {
+                                "score": {"type": "number", "minimum": 0, "maximum": 1},
+                                "reason": {"type": "string"}
+                            }
+                        },
+                        "budget_potential": {
+                            "type": "object",
+                            "properties": {
+                                "score": {"type": "number", "minimum": 0, "maximum": 1},
+                                "reason": {"type": "string"}
+                            }
+                        },
+                        "urgency": {
+                            "type": "object",
+                            "properties": {
+                                "score": {"type": "number", "minimum": 0, "maximum": 1},
+                                "reason": {"type": "string"}
+                            }
+                        },
+                        "decision_maker": {
+                            "type": "object",
+                            "properties": {
+                                "score": {"type": "number", "minimum": 0, "maximum": 1},
+                                "reason": {"type": "string"}
+                            }
+                        },
+                        "overall_recommendation": {"type": "string"}
+                    }
+                }
+            },
+            "required": ["score", "communication_scheme", "explanation"]
+        }
+    }
+}
+
+# === Lead Scoring Prompt ===
+LEAD_SCORE_PROMPT = (
+    "Ты — эксперт по оценке релевантности лидов в B2B-продажах и психологии принятия решений. "
+    "На основе анализа компании и психологического профиля оцени релевантность этого лида и определи оптимальную схему коммуникации.\n"
+    "\n"
+    "ВАЖНО: Четко определи роли сторон!\n"
+    "1. Мы (продавец) - компания из product_info.description\n"
+    "2. Анализируемая компания (потенциальный клиент) - компания из company_analysis\n"
+    "3. Оцени, является ли анализируемая компания потенциальным клиентом для НАС (продавца)\n"
+    "\n"
+    "ВАЖНО: Проверь совместимость отраслей!\n"
+    "1. Определи основную отрасль анализируемой компании из company_analysis.industry.primary\n"
+    "2. Определи основную отрасль нашей компании из product_info.description\n"
+    "3. Оцени, является ли анализируемая компания потенциальным клиентом для нас\n"
+    "4. Если отрасли несовместимы (например, мы продаем овощи, а компания разрабатывает CRM) - сразу ставь низкую оценку\n"
+    "\n"
+    "Оценка релевантности (факторы):\n"
+    "1. Соответствие компании нашему целевому сегменту\n"
+    "2. Потенциальный бюджет и готовность к инвестициям\n"
+    "3. Срочность потребности в решении\n"
+    "4. Влияние и готовность ЛПР к изменениям\n"
+    "\n"
+    "Выбор схемы коммуникации:\n"
+    "1. BAB (Before-After-Bridge):\n"
+    "   - Для аналитиков и стратегов (NT типы)\n"
+    "   - Когда важны логика и структура\n"
+    "   - При фокусе на долгосрочных результатах\n"
+    "\n"
+    "2. PAS (Problem-Agitate-Solve):\n"
+    "   - Для прагматиков и реалистов (SJ типы)\n"
+    "   - Когда важны конкретные результаты\n"
+    "   - При наличии явных болевых точек\n"
+    "\n"
+    "3. SPIN (Situation-Problem-Implication-Need):\n"
+    "   - Для интуитов и идеалистов (NF типы)\n"
+    "   - Когда важны ценности и видение\n"
+    "   - При необходимости глубокого погружения\n"
+    "\n"
+    "Для каждого фактора:\n"
+    "- Поставь оценку от 0 до 1\n"
+    "- Объясни причину такой оценки\n"
+    "\n"
+    "Для схемы коммуникации:\n"
+    "- Выбери оптимальную схему\n"
+    "- Объясни, почему она подходит\n"
+    "- Укажи ключевые фокусы\n"
+    "\n"
+    "В конце дай общую рекомендацию по работе с лидом.\n"
+    "\n"
+    "Ответ верни строго в формате JSON по схеме с ключами: score (общая оценка 0-1), communication_scheme (выбранная схема и обоснование), explanation (детальная разбивка по факторам).\n"
+    "Все значения должны быть на русском языке."
+)
+
+# === Email Subject Schema ===
+EMAIL_SUBJECT_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "email_subject_result",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "subject": {
+                    "type": "string",
+                    "description": "Email subject line that naturally continues the story from the email body"
+                }
+            },
+            "required": ["subject"]
+        }
+    }
+}
+
+# === Email Subject Prompt ===
+EMAIL_SUBJECT_PROMPT = """Сгенерируй цепляющую тему письма для первого контакта. Тема должна быть на русском языке.
+
+ВАЖНО: Четко определи роли сторон!
+1. Мы (отправитель) - компания из product_info.description
+2. Получатель - компания из company_analysis
+3. Мы пишем письмо от НАШЕЙ компании к анализируемой компании
+
+Перед генерацией темы проанализируй:
+1. Глубокий анализ получателя:
+   - Какие у них ключевые бизнес-процессы?
+   - Какие ценности и культура?
+   - Какие боли и вызовы?
+   - Какие неочевидные потребности?
+
+2. Творческий поиск связей:
+   - Как наш продукт может нестандартно решить их проблемы?
+   - Какие скрытые выгоды мы можем предложить?
+   - Как мы можем усилить их сильные стороны?
+   - Какие неожиданные применения нашего продукта возможны?
+
+3. Уникальные возможности:
+   - Какие особые преимущества нашего продукта?
+   - Как мы можем создать дополнительную ценность?
+   - Какие нестандартные сценарии использования?
+   - Как мы можем поддержать их уникальность?
+
+Требования к теме:
+- Длина: 30-50 символов
+- Включает название компании-получателя
+- Отражает конкретную выгоду или результат
+- Использует глагол действия (увеличить, повысить, сократить и т.д.)
+- Содержит конкретную метрику или KPI
+- Без спам-триггеров
+- Намекает на Telegram-коммуникацию
+
+Адаптация под релевантность лида:
+- score > 0.8: фокус на конкретных метриках и быстрых результатах
+- 0.5 < score < 0.8: фокус на ценности и долгосрочных выгодах
+- score < 0.5: фокус на образовании и инсайтах
+
+Используй информацию об отрасли:
+- Включай отраслевую терминологию
+- Ссылайся на актуальные тренды
+- Используй специфичные для отрасли метрики
+- Учитывай особенности primary и secondary отраслей
+
+Примеры плохих тем:
+❌ "Давайте обсудим сотрудничество"
+❌ "Предложение для [Компания]"
+❌ "Как мы можем помочь"
+❌ "Повысьте эффективность с [Наша компания]"
+
+Примеры хороших тем:
+✅ "[Компания]: +30% к [отраслевая метрика] за 3 месяца"
+✅ "[Компания]: сократите [затраты/время] на [процесс] на 40%"
+✅ "[Компания]: 3 способа оптимизации [отраслевой процесс]"
+✅ "[Компания]: как [отраслевой тренд] влияет на [KPI]"
+
+Контекст:
+{context}
+
+Сгенерируй тему письма, следуя рекомендациям выше."""
+
+# === Contact Extraction Schemas ===
+CONTACT_EXTRACTION_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "contact_extraction_result",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "company_details": {
+                    "type": "object",
+                    "properties": {
+                        "legal_name": {"type": "string", "description": "Юридическое название компании"},
+                        "inn": {"type": "string", "description": "ИНН компании"},
+                        "ogrn": {"type": "string", "description": "ОГРН компании"},
+                        "address": {
+                            "type": "object",
+                            "properties": {
+                                "full": {"type": "string", "description": "Полный адрес"},
+                                "city": {"type": "string", "description": "Город"},
+                                "street": {"type": "string", "description": "Улица"},
+                                "building": {"type": "string", "description": "Номер дома/строения"},
+                                "office": {"type": "string", "description": "Номер офиса/помещения"}
+                            }
+                        }
+                    }
+                },
+                "contacts": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "type": {"type": "string", "enum": ["email", "phone", "whatsapp", "telegram", "vk"]},
+                            "value": {"type": "string"},
+                            "context": {"type": "string"},
+                            "is_personal": {"type": "boolean"},
+                            "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+                        },
+                        "required": ["type", "value"]
+                    }
+                }
+            },
+            "required": ["contacts"]
+        }
+    }
+}
+
+# === Contact Analysis Schema ===
+CONTACT_ANALYSIS_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "contact_analysis_result",
+        "schema": {
+            "type": "object",
+            "properties": {
+                "contact_profile": {
+                    "type": "object",
+                    "properties": {
+                        "has_personal_contacts": {"type": "boolean"},
+                        "contact_types": {"type": "array", "items": {"type": "string"}},
+                        "primary_contact": {"type": "string"},
+                        "contact_availability": {"type": "string"},
+                        "contact_preferences": {"type": "array", "items": {"type": "string"}},
+                        "contact_confidence": {"type": "number", "minimum": 0, "maximum": 1}
+                    }
+                }
+            },
+            "required": ["contact_profile"]
+        }
+    }
+}
+
+# === Contact Extraction Prompt ===
+CONTACT_EXTRACTION_PROMPT = """Проанализируй текст и найди все контактные данные и реквизиты компании. Включи:
+
+1. Реквизиты компании:
+   - Юридическое название компании (полное наименование)
+   - ИНН (10 или 12 цифр)
+   - ОГРН (13 или 15 цифр)
+   - Юридический адрес (полный адрес с индексом)
+   - Фактический адрес (если отличается от юридического)
+
+2. Контактные данные:
+   - Email адреса
+   - Телефонные номера
+   - WhatsApp номера
+   - Telegram контакты
+   - VK ссылки
+
+Для каждого контакта определи:
+1. Тип контакта
+2. Значение (нормализованное)
+3. Контекст (где найден)
+4. Это личный контакт или общий
+5. Уверенность в правильности (0-1)
+
+ВАЖНО:
+- Нормализуй все контакты в стандартный формат
+- Исключи виртуальные контакты (боты, аватары)
+- Укажи контекст, где найден контакт
+- Оцени уверенность в правильности
+- Для адреса укажи все компоненты (город, улица, дом, офис)
+- Проверь корректность ИНН и ОГРН по количеству цифр
+- Для юридического названия используй полное наименование из реквизитов
+
+Ответ верни строго в формате JSON по схеме."""
+
+# === Contact Analysis Prompt ===
+CONTACT_ANALYSIS_PROMPT = """Проанализируй найденные контакты и составь профиль контактной информации компании:
+
+1. Есть ли личные контакты (не общие)?
+2. Какие типы контактов представлены?
+3. Какой контакт является основным?
+4. Насколько доступны контакты?
+5. Какие предпочтения в коммуникации видны?
+6. Насколько уверены в качестве контактов?
+
+Ответ верни строго в формате JSON по схеме.""" 

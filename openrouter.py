@@ -5,9 +5,11 @@ from openai import OpenAI
 import traceback
 import requests
 import time
+from progress import progress
 
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemma-3-27b-it")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_MAX_TOKENS = int(os.getenv("OPENROUTER_MAX_TOKENS", "4096"))  # Максимальное количество токенов в ответе
 
 client = OpenAI(
     api_key=OPENROUTER_API_KEY,
@@ -93,22 +95,50 @@ def llm_completion(messages, temperature=0.4, response_format=None, model=None, 
     for attempt in range(max_retries):
         _respect_openrouter_rate_limit(debug=debug)
         try:
-            response = client.chat.completions.create(
-                model=model or OPENROUTER_MODEL,
-                messages=messages,
-                temperature=temperature,
-                stream=False,
-                max_tokens=2048,
-                **kwargs
-            )
             if debug:
-                print("[OpenRouter RAW RESPONSE]", response)
-            usage = getattr(response, 'usage', None)
-            if usage is None and isinstance(response, dict):
-                usage = response.get('usage', None)
-            if usage is None:
-                usage = {}
-            return {'content': response.choices[0].message.content, 'usage': usage}
+                # В режиме debug используем streaming
+                response = client.chat.completions.create(
+                    model=model or OPENROUTER_MODEL,
+                    messages=messages,
+                    temperature=temperature,
+                    stream=True,
+                    max_tokens=OPENROUTER_MAX_TOKENS,
+                    **kwargs
+                )
+                content = ""
+                current_line = ""
+                for chunk in response:
+                    if hasattr(chunk, 'choices') and chunk.choices and hasattr(chunk.choices[0], 'delta'):
+                        delta = chunk.choices[0].delta
+                        if hasattr(delta, 'content') and delta.content:
+                            current_line += delta.content
+                            content += delta.content
+                            # Если встретили перенос строки или знак пунктуации, выводим накопленную строку
+                            if '\n' in current_line or any(p in current_line for p in '.!?,;:'):
+                                progress.write(current_line.strip())
+                                current_line = ""
+                # Выводим оставшийся текст
+                if current_line:
+                    progress.write(current_line.strip())
+                return {'content': content, 'usage': {}}
+            else:
+                # В обычном режиме без streaming
+                response = client.chat.completions.create(
+                    model=model or OPENROUTER_MODEL,
+                    messages=messages,
+                    temperature=temperature,
+                    stream=False,
+                    max_tokens=OPENROUTER_MAX_TOKENS,
+                    **kwargs
+                )
+                if debug:
+                    print("[OpenRouter RAW RESPONSE]", response)
+                usage = getattr(response, 'usage', None)
+                if usage is None and isinstance(response, dict):
+                    usage = response.get('usage', None)
+                if usage is None:
+                    usage = {}
+                return {'content': response.choices[0].message.content, 'usage': usage}
         except Exception as e:
             err_str = str(e)
             if ("429" in err_str or "rate limit" in err_str.lower() or "402" in err_str) and attempt < max_retries-1:

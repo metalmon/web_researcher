@@ -56,6 +56,7 @@ def parse_final_sales_response(s):
             return None
     key_map = {
         'company_profile': 'Профиль компании',
+        'industry': 'Отрасль',
         'core_values': 'Ключевые ценности',
         'internal_pains': 'Внутренние боли',
         'hidden_concerns': 'Скрытые опасения',
@@ -71,7 +72,15 @@ def parse_final_sales_response(s):
     result = {}
     for en, ru in key_map.items():
         if en in data:
-            result[ru] = data[en]
+            if en == 'industry':
+                industry_data = data[en]
+                result[ru] = {
+                    'Основная отрасль': industry_data.get('primary', ''),
+                    'Смежные отрасли': industry_data.get('secondary', []),
+                    'Тренды': industry_data.get('trends', [])
+                }
+            else:
+                result[ru] = data[en]
         else:
             found = next((v for k, v in data.items() if k.startswith(en)), None)
             result[ru] = found

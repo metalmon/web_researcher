@@ -44,7 +44,8 @@ def sales_generate_completion(
     local_only=False,
     force_remote=False,
     model=None,
-    messages=None
+    messages=None,
+    debug=False
 ):
     """
     Универсальный роутер для sales pipeline: сначала openrouter, если доступен и не запрещён параметрами, иначе fallback на локальную модель.
@@ -60,29 +61,29 @@ def sales_generate_completion(
         ]
     # Только локально
     if local_only and not force_remote:
-        result = local_llm.llm_completion(messages, temperature=temperature, response_format=response_format, model=model)
+        result = local_llm.llm_completion(messages, temperature=temperature, response_format=response_format, model=model, debug=debug)
         accumulate_usage(result, is_cloud=False)
         return result
     # Только openrouter (но fallback есть)
     if force_remote and openrouter.is_available():
         try:
-            result = openrouter.llm_completion(messages, temperature=temperature, response_format=response_format, model=model)
+            result = openrouter.llm_completion(messages, temperature=temperature, response_format=response_format, model=model, debug=debug)
             accumulate_usage(result, is_cloud=True)
             return result
         except Exception as e:
             print(f"[!] Ошибка OpenRouter, fallback на локальную модель: {e}")
-            result = local_llm.llm_completion(messages, temperature=temperature, response_format=response_format, model=model)
+            result = local_llm.llm_completion(messages, temperature=temperature, response_format=response_format, model=model, debug=debug)
             accumulate_usage(result, is_cloud=False)
             return result
     # Автоматический выбор
     if openrouter.is_available():
         try:
-            result = openrouter.llm_completion(messages, temperature=temperature, response_format=response_format, model=model)
+            result = openrouter.llm_completion(messages, temperature=temperature, response_format=response_format, model=model, debug=debug)
             accumulate_usage(result, is_cloud=True)
             return result
         except Exception as e:
             print(f"[!] Ошибка OpenRouter, fallback на локальную модель: {e}")
-    result = local_llm.llm_completion(messages, temperature=temperature, response_format=response_format, model=model)
+    result = local_llm.llm_completion(messages, temperature=temperature, response_format=response_format, model=model, debug=debug)
     accumulate_usage(result, is_cloud=False)
     return result 
 
@@ -99,7 +100,7 @@ def select_best_analysis_pages(links, limit, local_only=True, force_remote=False
     response = sales_generate_completion(
         messages=messages,
         response_format=ANALYSIS_PAGE_SELECTION_SCHEMA,
-        local_only=local_only and not force_remote
+        local_only=not force_remote and local_only
     )
     import json
     try:

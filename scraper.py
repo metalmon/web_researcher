@@ -4,6 +4,8 @@ load_dotenv(find_dotenv(), override=True)
 from firecrawl import FirecrawlApp, ScrapeOptions
 from tqdm import tqdm
 from colorama import Fore, Style
+from progress import progress
+from prompts_and_schemas import MULTI_PROMPTS
 
 # === ВАЖНО: Логика флагов local_only и force_remote ===
 # local_only (-L): использовать только локальную модель для всех запросов, КРОМЕ тех, где явно указан force_remote.
@@ -35,6 +37,9 @@ def crawl_and_analyze_url(
     """
     api_url = os.getenv("SCRAPER_API_URL", "http://localhost:3002")
     app = FirecrawlApp(api_url=api_url)
+
+    # 1. Получение данных
+    progress.update(1, "Получение данных")
     if selected_pages:
         data = []
         for page_url in selected_pages:
@@ -53,6 +58,8 @@ def crawl_and_analyze_url(
             poll_interval=5
         )
         data = crawl_status.data
+
+    # 2. Анализ страниц
     combined_results = []
     page_summaries = []  # Для хранения кратких summary по каждой странице
     if debug:
@@ -62,7 +69,7 @@ def crawl_and_analyze_url(
     if debug:
         print(Fore.YELLOW + f"Количество запросов к LLM: {requests_needed}." + Style.RESET_ALL)
 
-    for item in tqdm(data, desc="Анализ страниц"):
+    for page_idx, item in enumerate(data, 1):
         doc = item.model_dump()
         content = None
         for fmt in ['markdown', 'text', 'html']:
@@ -101,6 +108,7 @@ def crawl_and_analyze_url(
                 elif analysis:
                     combined_results.append(analysis)
                     page_summaries.append({"result": analysis})
+
     final_text = '\n'.join(str(r) for r in combined_results if r)
     return {
         "result": final_text,
@@ -111,6 +119,7 @@ def get_site_links(url):
     """Возвращает список ссылок с сайта (карта сайта через Firecrawl)."""
     api_url = os.getenv("SCRAPER_API_URL", "http://localhost:3002")
     app = FirecrawlApp(api_url=api_url)
+    progress.update(1, "Получение карты сайта")
     site_map = app.map_url(
         url,
         limit=1,
@@ -122,6 +131,7 @@ def get_page_content(url):
     """Возвращает текст главной страницы (markdown или html)."""
     api_url = os.getenv("SCRAPER_API_URL", "http://localhost:3002")
     app = FirecrawlApp(api_url=api_url)
+    progress.update(1, "Получение контента страницы")
     crawl_status = app.crawl_url(
         url,
         limit=1,
